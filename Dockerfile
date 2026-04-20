@@ -13,7 +13,7 @@
 #   docker run --rm ghcr.io/nanvix/toolchain-clang:1.0.0 clang --version
 # =============================================================================
 
-ARG GCC_IMAGE=ghcr.io/nanvix/toolchain-gcc:1.0.0
+ARG GCC_IMAGE=ghcr.io/nanvix/toolchain-gcc:latest
 FROM ${GCC_IMAGE} AS gcc-sysroot
 
 FROM ubuntu:24.04 AS builder
