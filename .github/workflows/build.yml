@@ -49,23 +49,23 @@ jobs:
             type=sha
 
       - name: "Build image"
+        env:
+          DOCKER_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           TAGS=""
-          IFS=$'\n'
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            TAGS="$TAGS -t $tag"
-          done
-          unset IFS
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && TAGS="$TAGS -t $tag"
+          done <<< "$DOCKER_TAGS"
           docker build $TAGS .
 
       - name: "Push image"
         if: github.event_name != 'pull_request'
+        env:
+          DOCKER_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          IFS=$'\n'
-          for tag in ${{ steps.meta.outputs.tags }}; do
-            docker push "$tag"
-          done
-          unset IFS
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && docker push "$tag"
+          done <<< "$DOCKER_TAGS"
 
   test:
     name: "Smoke Test"
