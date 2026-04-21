@@ -48,6 +48,13 @@ WORKDIR /build
 RUN git clone https://github.com/nanvix/llvm-project /build/llvm-project && \
     cd /build/llvm-project && git checkout ${LLVM_COMMIT}
 
+# Pre-create build directory with symlinks to GCC sysroot so the just-built
+# clang can find GCC headers/libs when cross-compiling runtimes for
+# i686-unknown-nanvix. Clang searches for GCC relative to its own binary.
+RUN mkdir -p /build/llvm-project/build/lib && \
+    ln -s /opt/nanvix/toolchain-gcc/lib/gcc /build/llvm-project/build/lib/gcc && \
+    ln -s /opt/nanvix/toolchain-gcc/i686-nanvix /build/llvm-project/build/i686-nanvix
+
 # Build LLVM/Clang.
 RUN cd /build/llvm-project && \
     ./z configure --install-location="${PREFIX}" --stage=0 --sysroot-location="/opt/nanvix/toolchain-gcc" && \
