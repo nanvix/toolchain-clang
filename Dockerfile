@@ -12,9 +12,16 @@
 #
 # Verify:
 #   docker run --rm ghcr.io/nanvix/toolchain-clang:1.0.0 clang --version
+#
+# Named stages allow caching intermediate builds independently:
+#   docker build --target newlib-build ...   # cache base layers
+#   docker build ...                         # full image, reuses base cache
 # =============================================================================
 
-FROM ubuntu:24.04 AS builder
+# ---------------------------------------------------------------------------
+# deps: base image with all build dependencies
+# ---------------------------------------------------------------------------
+FROM ubuntu:24.04 AS deps
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -44,53 +51,65 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Pinned commits for each component.
-# NOTE: These point to feature branches with staged build support.
-# Update to dev/main branch commits after upstream PRs merge:
-#   - nanvix/binutils#28
-#   - nanvix/llvm-project#6
-#   - nanvix/newlib#6
-ARG BINUTILS_COMMIT=6e8a153968cbfb47f8a3d52851bffa01b205cdb5
-ARG LLVM_COMMIT=bbe41f956cdfc5b1a2e8d54fc7bedf30924b7d00
-ARG NEWLIB_COMMIT=fee0541f8643d7172b67aa968fbf4d8f7f1178a4
-
 ENV PREFIX=/opt/nanvix/toolchain-clang
 ENV TARGET=i686-nanvix
 ENV PATH="${PREFIX}/bin:${PATH}"
 
 WORKDIR /build
 
-# Clone Binutils.
+# ---------------------------------------------------------------------------
+# binutils-build: Binutils for the target
+# ---------------------------------------------------------------------------
+FROM deps AS binutils-build
+
+# Pinned commits for each component.
+# NOTE: These point to feature branches with staged build support.
+# Update to dev/main branch commits after upstream PRs merge.
+ARG BINUTILS_COMMIT=6e8a153968cbfb47f8a3d52851bffa01b205cdb5
+
 RUN git clone https://github.com/nanvix/binutils /build/binutils && \
     cd /build/binutils && git checkout ${BINUTILS_COMMIT}
 
-# Clone LLVM.
-RUN git clone https://github.com/nanvix/llvm-project /build/llvm-project && \
-    cd /build/llvm-project && git checkout ${LLVM_COMMIT}
-
-# Clone Newlib.
-RUN git clone https://github.com/nanvix/newlib /build/newlib && \
-    cd /build/newlib && git checkout ${NEWLIB_COMMIT}
-
-# Build Binutils.
 RUN cd /build/binutils && \
     ./z configure --install-location="${PREFIX}" --stage=0 --sysroot-location="${PREFIX}" && \
     ./z build && \
     ./z install
 
-# Build LLVM/Clang stage 0 (compiler + linker, no runtimes).
+# ---------------------------------------------------------------------------
+# llvm-stage0-build: Clang + LLD cross-compiler (no runtimes)
+# ---------------------------------------------------------------------------
+FROM binutils-build AS llvm-stage0-build
+
+ARG LLVM_COMMIT=700ecc055d5aae3e6af7d9242853d0c847af605f
+
+RUN git clone https://github.com/nanvix/llvm-project /build/llvm-project && \
+    cd /build/llvm-project && git checkout ${LLVM_COMMIT}
+
 RUN cd /build/llvm-project && \
     ./z configure --install-location="${PREFIX}" --stage=0 --sysroot-location="${PREFIX}" && \
     ./z build && \
     ./z install
 
-# Build Newlib (C library for target, auto-detects Clang as cross-compiler).
+# ---------------------------------------------------------------------------
+# newlib-build: C library for the target (auto-detects Clang)
+# ---------------------------------------------------------------------------
+FROM llvm-stage0-build AS newlib-build
+
+ARG NEWLIB_COMMIT=fee0541f8643d7172b67aa968fbf4d8f7f1178a4
+
+RUN git clone https://github.com/nanvix/newlib /build/newlib && \
+    cd /build/newlib && git checkout ${NEWLIB_COMMIT}
+
 RUN cd /build/newlib && \
     ./z configure --install-location="${PREFIX}" --stage=0 --sysroot-location="${PREFIX}" && \
     ./z build && \
     ./z install
 
-# Build LLVM runtimes stage 1 (compiler-rt, libunwind, libcxx, libcxxabi).
+# ---------------------------------------------------------------------------
+# llvm-stage1-build: compiler-rt builtins
+# ---------------------------------------------------------------------------
+FROM newlib-build AS llvm-stage1-build
+
 RUN cd /build/llvm-project && \
     ./z configure --install-location="${PREFIX}" --stage=1 --sysroot-location="${PREFIX}" && \
     ./z build && \
@@ -109,7 +128,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         make \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /opt/nanvix/toolchain-clang /opt/nanvix/toolchain-clang
+COPY --from=llvm-stage1-build /opt/nanvix/toolchain-clang /opt/nanvix/toolchain-clang
 
 ENV PATH="/opt/nanvix/toolchain-clang/bin:${PATH}"
 
