@@ -52,7 +52,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   - nanvix/newlib#6
 ARG BINUTILS_COMMIT=6e8a153968cbfb47f8a3d52851bffa01b205cdb5
 ARG LLVM_COMMIT=c6de8dc187ff26a8e1e32848ca7c7006d96e9e79
-ARG NEWLIB_COMMIT=b36de2db2fae9492f63e30c782af174b4e261317
+ARG NEWLIB_COMMIT=fee0541f8643d7172b67aa968fbf4d8f7f1178a4
 
 ENV PREFIX=/opt/nanvix/toolchain-clang
 ENV TARGET=i686-nanvix
