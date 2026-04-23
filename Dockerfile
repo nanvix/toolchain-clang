@@ -4,7 +4,8 @@
 # =============================================================================
 # nanvix/toolchain-clang
 #
-# LLVM/Clang cross-compilation infrastructure for Nanvix.
+# Cross-compilation toolchain: Binutils + LLVM/Clang (2-stage) + Newlib
+# for i686-nanvix.
 #
 # Build:
 #   docker build -t ghcr.io/nanvix/toolchain-clang:1.0.0 .
@@ -13,61 +14,91 @@
 #   docker run --rm ghcr.io/nanvix/toolchain-clang:1.0.0 clang --version
 # =============================================================================
 
-ARG GCC_IMAGE=ghcr.io/nanvix/toolchain-gcc:latest
-FROM ${GCC_IMAGE} AS gcc-sysroot
-
 FROM ubuntu:24.04 AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install build dependencies.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        bison \
         build-essential \
+        bzip2 \
         ca-certificates \
         cmake \
         curl \
+        file \
+        flex \
+        gawk \
         git \
+        libgmp-dev \
+        libisl-dev \
+        libmpc-dev \
+        libmpfr-dev \
+        m4 \
+        make \
         ninja-build \
+        patch \
         python3 \
+        texinfo \
         wget \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy GCC sysroot (newlib headers/libs) needed by LLVM build.
-COPY --from=gcc-sysroot /opt/nanvix/toolchain-gcc /opt/nanvix/toolchain-gcc
-ENV PATH="/opt/nanvix/toolchain-gcc/bin:${PATH}"
-
-# Pinned LLVM commit.
+# Pinned commits for each component.
+ARG BINUTILS_COMMIT=cce4ffcd98cfd5e715f2b323a6a585907f102a8a
 ARG LLVM_COMMIT=cc6cdbfb0294fcddf19e0cdcf1550898783c82ba
+ARG NEWLIB_COMMIT=e12d84a6789c07f938db4f6440ea0b427914c735
 
 ENV PREFIX=/opt/nanvix/toolchain-clang
+ENV TARGET=i686-nanvix
+ENV PATH="${PREFIX}/bin:${PATH}"
 
 WORKDIR /build
+
+# Clone Binutils.
+RUN git clone https://github.com/nanvix/binutils /build/binutils && \
+    cd /build/binutils && git checkout ${BINUTILS_COMMIT}
 
 # Clone LLVM.
 RUN git clone https://github.com/nanvix/llvm-project /build/llvm-project && \
     cd /build/llvm-project && git checkout ${LLVM_COMMIT}
 
-# Pre-create build directory with symlinks to GCC sysroot so the just-built
-# clang can find GCC headers/libs when cross-compiling runtimes for
-# i686-unknown-nanvix. Clang searches for GCC relative to its own binary.
-RUN mkdir -p /build/llvm-project/build/lib && \
-    ln -s /opt/nanvix/toolchain-gcc/lib/gcc /build/llvm-project/build/lib/gcc && \
-    ln -s /opt/nanvix/toolchain-gcc/i686-nanvix /build/llvm-project/build/i686-nanvix
+# Clone Newlib.
+RUN git clone https://github.com/nanvix/newlib /build/newlib && \
+    cd /build/newlib && git checkout ${NEWLIB_COMMIT}
 
-# Build LLVM/Clang.
+# Build Binutils.
+RUN cd /build/binutils && \
+    ./z configure --install-location="${PREFIX}" --stage=0 --sysroot-location="${PREFIX}" && \
+    ./z build && \
+    ./z install
+
+# Build LLVM/Clang stage 0 (compiler + linker, no runtimes).
 RUN cd /build/llvm-project && \
-    ./z configure --install-location="${PREFIX}" --stage=0 --sysroot-location="/opt/nanvix/toolchain-gcc" && \
+    ./z configure --install-location="${PREFIX}" --stage=0 --sysroot-location="${PREFIX}" && \
+    ./z build && \
+    ./z install
+
+# Build Newlib (C library for target, auto-detects Clang as cross-compiler).
+RUN cd /build/newlib && \
+    ./z configure --install-location="${PREFIX}" --stage=0 --sysroot-location="${PREFIX}" && \
+    ./z build && \
+    ./z install
+
+# Build LLVM runtimes stage 1 (compiler-rt, libunwind, libcxx, libcxxabi).
+RUN cd /build/llvm-project && \
+    ./z configure --install-location="${PREFIX}" --stage=1 --sysroot-location="${PREFIX}" && \
     ./z build && \
     ./z install
 
 # =============================================================================
-# Runtime stage — only the installed LLVM/Clang prefix.
+# Runtime stage — only the installed toolchain prefix.
 # =============================================================================
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Install minimal runtime dependencies for cross-compilation.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         make \
@@ -78,7 +109,9 @@ COPY --from=builder /opt/nanvix/toolchain-clang /opt/nanvix/toolchain-clang
 ENV PATH="/opt/nanvix/toolchain-clang/bin:${PATH}"
 
 # Smoke test.
-RUN clang --version
+RUN clang --version && \
+    i686-nanvix-as --version && \
+    i686-nanvix-ld --version
 
 LABEL org.opencontainers.image.source="https://github.com/nanvix/toolchain-clang" \
-      org.opencontainers.image.description="Nanvix LLVM/Clang cross-compilation toolchain for i686-nanvix"
+      org.opencontainers.image.description="Nanvix LLVM/Clang cross-compilation toolchain (Binutils + Clang + Newlib) for i686-nanvix"
