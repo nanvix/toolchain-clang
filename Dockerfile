@@ -45,9 +45,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Pinned commits for each component.
-ARG BINUTILS_COMMIT=cce4ffcd98cfd5e715f2b323a6a585907f102a8a
-ARG LLVM_COMMIT=cc6cdbfb0294fcddf19e0cdcf1550898783c82ba
-ARG NEWLIB_COMMIT=e12d84a6789c07f938db4f6440ea0b427914c735
+# NOTE: These point to feature branches with staged build support.
+# Update to dev/main branch commits after upstream PRs merge:
+#   - nanvix/binutils#28
+#   - nanvix/llvm-project#6
+#   - nanvix/newlib#6
+ARG BINUTILS_COMMIT=6e8a153968cbfb47f8a3d52851bffa01b205cdb5
+ARG LLVM_COMMIT=c6de8dc187ff26a8e1e32848ca7c7006d96e9e79
+ARG NEWLIB_COMMIT=b36de2db2fae9492f63e30c782af174b4e261317
 
 ENV PREFIX=/opt/nanvix/toolchain-clang
 ENV TARGET=i686-nanvix
