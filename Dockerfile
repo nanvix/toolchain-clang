@@ -80,7 +80,7 @@ RUN cd /build/binutils && \
 # ---------------------------------------------------------------------------
 FROM binutils-build AS llvm-stage0-build
 
-ARG LLVM_COMMIT=700ecc055d5aae3e6af7d9242853d0c847af605f
+ARG LLVM_COMMIT=f97b1b7f56811accb963c076e59231eb29bc6761
 
 RUN git clone https://github.com/nanvix/llvm-project /build/llvm-project && \
     cd /build/llvm-project && git checkout ${LLVM_COMMIT}
